@@ -1,0 +1,3 @@
+# Ignore Lambda build files
+requirements.txt
+python/

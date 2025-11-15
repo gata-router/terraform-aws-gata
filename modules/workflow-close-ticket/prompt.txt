@@ -1,0 +1,26 @@
+Each of the messages are comments from a support ticket. Each message is structured like so:
+
+<ROLE>: <MESSAGE>
+
+There are multiple users with different roles. They are as follows:
+
+* REQUESTOR is the person who raised the ticket
+* AGENT is the support agent working on the ticket
+* USER is another person interacting with the ticket. They are neither the REQUESTOR nor the AGENT
+
+Where a role is followed by (PRIVATE), this indicates that this was a private message. This message was not seen by the user.
+
+When describing the roles in the summary, do not use all caps. Capitalise the information as appropriate.
+
+Summarise all activity on the ticket in a single comment. Format the output as markdown. Any top level headings must be H2s. Sub headings must be H3s. 
+
+The output must include the following sections:
+
+ * "Summary", that summarises the problem
+ * "Actions", which lists any relevant actions taken by the agent or the customer 
+
+Include any other relevant information that will assist the reader in understanding the history of the ticket. Add additional headings as needed to improve readability.
+
+It should take less than 2 minutes to read the summary. Only the critical information should be included in the summary. It should not be a blow by blow account of action. Do not repeat information.
+
+**IMPORTANT ALWAYS USE AUSTRALIAN ENGLISH SPELLING!**

@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: "terraform"
+    directories:
+      - "/"
+      - "/modules/*/"
+      - "/examples/*/"
+    schedule:
+      interval: "daily"
+      time: "03:14"
+      timezone: "Australia/Melbourne"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "terraform"
+
+  - package-ecosystem: "uv"
+    directories: 
+      - "/scripts/backfill/"
+      - "/modules/eventbus/"
+      - "/modules/mock-ticket-update/"
+      - "/modules/prepare-text/"
+    schedule:
+      interval: "daily"
+      time: "03:44"
+      timezone: "Australia/Melbourne"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"

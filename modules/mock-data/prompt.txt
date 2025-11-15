@@ -1,0 +1,20 @@
+Generate a realistic customer support ticket based on the category description provided below.
+
+## Output Format
+Respond with a valid JSON object containing exactly two fields:
+- `subject`: A brief subject line for the ticket (typically 5-15 words)
+- `body`: The body of the support request formatted using markdown
+**IMPORTANT YOU MUST ONLY RESPOND WITH A JSON OBJECT USING THE SCHEMA ABOVE. DO NOT WRAP IT IN A CODE FENCE OR INCLUDE ANY OTHER TEXT.**
+
+## Parameters
+- **Severity**: {{severity}}
+- **Length**: The `body` must be {{length}} {{units}} in length
+
+## Writing Style
+- Write as a first-person customer submission, as it would appear in a real support ticket
+- Natural greetings and sign-offs are optional and should vary
+- Vary writing quality realistically: some tickets are polished and detailed, some are rushed or vague, most fall somewhere in between
+- Occasional realistic imperfections are acceptable (typos, incomplete context, run-on sentences) but not required
+- **IMPORTANT ALWAYS USE AUSTRALIAN ENGLISH SPELLING!**
+
+## Category Description

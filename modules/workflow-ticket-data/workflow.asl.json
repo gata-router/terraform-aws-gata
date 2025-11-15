@@ -1,0 +1,248 @@
+{
+    "QueryLanguage": "JSONata",
+    "Comment": "Massage ticket data into a consistent format",
+    "StartAt": "GetTicket",
+    "States": {
+        "GetTicket": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Output": "{% $states.result.Payload %}",
+            "Arguments": {
+                "FunctionName": "${lambda_ticket_get_arn}:$LATEST",
+                "Payload": {
+                    "path": {
+                        "ticket_id": "{% $states.input.Ticket.ticket_id %}"
+                    }
+                }
+            },
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException",
+                        "HTTPError"
+                    ],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 5,
+                    "BackoffRate": 2,
+                    "JitterStrategy": "FULL"
+                }
+            ],
+            "Next": "RedactPii",
+            "Assign": {
+                "Ticket": "{% $merge([$states.result.Payload.body.ticket, {'current_group_id': $states.result.Payload.body.ticket.group_id}]) %}"
+            }
+        },
+        "RedactPii": {
+            "Type": "Parallel",
+            "Next": "GenerateEmbeddings",
+            "Branches": [
+                {
+                    "StartAt": "BodyDetectPii",
+                    "States": {
+                        "BodyDetectPii": {
+                            "Type": "Task",
+                            "Arguments": {
+                                "LanguageCode": "en",
+                                "Text": "{% $Ticket.description %}"
+                            },
+                            "Resource": "arn:aws:states:::aws-sdk:comprehend:detectPiiEntities",
+                            "Assign": {
+                                "BodyPiiEntities": "{% $states.result.Entities %}",
+                                "CleanDescription": "{% $Ticket.description %}"
+                            },
+                            "Next": "BodyNeedsRedacting"
+                        },
+                        "BodyNeedsRedacting": {
+                            "Type": "Choice",
+                            "Choices": [
+                                {
+                                    "Next": "BodyRedactPii",
+                                    "Condition": "{% $count($BodyPiiEntities) > 0 %}",
+                                    "Comment": "ContainsPII"
+                                }
+                            ],
+                            "Default": "BodyPrepareText"
+                        },
+                        "BodyRedactPii": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Output": "{% $states.result.Payload %}",
+                            "Arguments": {
+                                "FunctionName": "${lambda_redact_arn}:$LATEST",
+                                "Payload": {
+                                    "text": "{% $Ticket.description %}",
+                                    "entities": "{% $BodyPiiEntities %}",
+                                    "ignored_entities": [
+                                        "NAME",
+                                        "DATE_TIME",
+                                        "URL"
+                                    ]
+                                }
+                            },
+                            "Retry": [
+                                {
+                                    "ErrorEquals": [
+                                        "Lambda.ServiceException",
+                                        "Lambda.AWSLambdaException",
+                                        "Lambda.SdkClientException",
+                                        "Lambda.TooManyRequestsException"
+                                    ],
+                                    "IntervalSeconds": 1,
+                                    "MaxAttempts": 3,
+                                    "BackoffRate": 2,
+                                    "JitterStrategy": "FULL"
+                                }
+                            ],
+                            "Next": "BodyPrepareText",
+                            "Assign": {
+                                "CleanDescription": "{% $states.result.Payload.clean_text %}"
+                            }
+                        },
+                        "BodyPrepareText": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Output": {
+                                "CleanDescription": "{% $states.result.Payload.body %}"
+                            },
+                            "Arguments": {
+                                "FunctionName": "${lambda_prepare_text_arn}:$LATEST",
+                                "Payload": {
+                                    "text": "{% $CleanDescription %}"
+                                }
+                            },
+                            "Retry": [
+                                {
+                                    "ErrorEquals": [
+                                        "Lambda.ServiceException",
+                                        "Lambda.AWSLambdaException",
+                                        "Lambda.SdkClientException",
+                                        "Lambda.TooManyRequestsException"
+                                    ],
+                                    "IntervalSeconds": 1,
+                                    "MaxAttempts": 3,
+                                    "BackoffRate": 2,
+                                    "JitterStrategy": "FULL"
+                                }
+                            ],
+                            "End": true
+                        }
+                    }
+                },
+                {
+                    "StartAt": "TitleDetectPii",
+                    "States": {
+                        "TitleDetectPii": {
+                            "Type": "Task",
+                            "Arguments": {
+                                "LanguageCode": "en",
+                                "Text": "{% $Ticket.subject %}"
+                            },
+                            "Resource": "arn:aws:states:::aws-sdk:comprehend:detectPiiEntities",
+                            "Assign": {
+                                "TitlePiiEntities": "{% $states.result.Entities %}",
+                                "CleanSubject": "{% $Ticket.subject %}"
+                            },
+                            "Next": "TitleNeedsRedacting"
+                        },
+                        "TitleNeedsRedacting": {
+                            "Type": "Choice",
+                            "Choices": [
+                                {
+                                    "Next": "TitleRedactPii",
+                                    "Condition": "{% $count($TitlePiiEntities) > 0 %}",
+                                    "Comment": "ContainsPII"
+                                }
+                            ],
+                            "Default": "TitlePrepareText"
+                        },
+                        "TitleRedactPii": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Output": "{% $states.result.Payload %}",
+                            "Arguments": {
+                                "FunctionName": "${lambda_redact_arn}:$LATEST",
+                                "Payload": {
+                                    "text": "{% $Ticket.subject %}",
+                                    "entities": "{% $TitlePiiEntities %}",
+                                    "ignored_entities": [
+                                        "NAME",
+                                        "DATE_TIME",
+                                        "URL"
+                                    ]
+                                }
+                            },
+                            "Retry": [
+                                {
+                                    "ErrorEquals": [
+                                        "Lambda.ServiceException",
+                                        "Lambda.AWSLambdaException",
+                                        "Lambda.SdkClientException",
+                                        "Lambda.TooManyRequestsException"
+                                    ],
+                                    "IntervalSeconds": 1,
+                                    "MaxAttempts": 3,
+                                    "BackoffRate": 2,
+                                    "JitterStrategy": "FULL"
+                                }
+                            ],
+                            "Next": "TitlePrepareText",
+                            "Assign": {
+                                "CleanSubject": "{% $states.result.Payload.clean_text %}"
+                            }
+                        },
+                        "TitlePrepareText": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Output": {
+                                "CleanSubject": "{% $states.result.Payload.body %}"
+                            },
+                            "Arguments": {
+                                "FunctionName": "${lambda_prepare_text_arn}:$LATEST",
+                                "Payload": {
+                                    "text": "{% $CleanSubject %}"
+                                }
+                            },
+                            "Retry": [
+                                {
+                                    "ErrorEquals": [
+                                        "Lambda.ServiceException",
+                                        "Lambda.AWSLambdaException",
+                                        "Lambda.SdkClientException",
+                                        "Lambda.TooManyRequestsException"
+                                    ],
+                                    "IntervalSeconds": 1,
+                                    "MaxAttempts": 3,
+                                    "BackoffRate": 2,
+                                    "JitterStrategy": "FULL"
+                                }
+                            ],
+                            "End": true
+                        }
+                    }
+                }
+            ],
+            "Assign": {
+                "CleanDescription": "{% $states.result[0].CleanDescription %}",
+                "CleanSubject": "{% $states.result[1].CleanSubject %}",
+                "CleanText": "{% $join([$states.result[1].CleanSubject, $states.result[0].CleanDescription], '\n') %}"
+            }
+        },
+        "GenerateEmbeddings": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::bedrock:invokeModel",
+            "Arguments": {
+                "ModelId": "${titan_embed_model_arn}",
+                "Body": {
+                    "inputText": "{% $substring($CleanText, 0, 50000) %}"
+                }
+            },
+            "End": true,
+            "Output": {
+                "Ticket": "{% $merge([$Ticket, {'processed_data' : $CleanText, 'embeddings': $states.result.Body.embedding}]) %}"
+            }
+        }
+    }
+}

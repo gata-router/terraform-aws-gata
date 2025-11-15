@@ -1,0 +1,138 @@
+{
+  "Comment": "Create multiple new tickets",
+  "StartAt": "LoadConfig",
+  "States": {
+    "LoadConfig": {
+      "Type": "Task",
+      "Arguments": {
+        "Bucket": "${config_bucket_name}",
+        "Key": "create-tickets/groups.json"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:s3:getObject",
+      "Next": "Iterator",
+      "Assign": {
+        "groups": "{% $parse($states.result.Body).groups %}",
+        "num_tickets": "{% $states.input.num_tickets %}",
+        "severities": [
+          "**low**: Minor inconvenience, casual tone, no urgency, customer is patient",
+          "**normal**: Standard issue affecting the customer's work, polite but wants resolution",
+          "**high**: Significant impact on business or workflow, urgent tone, may mention deadlines, escalation, or consequences"
+        ],
+        "weighted_ids": "{% $parse($states.result.Body).weighted_ids %}"
+      }
+    },
+    "Iterator": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "PrepData",
+        "States": {
+          "PrepData": {
+            "Type": "Pass",
+            "Next": "GenerateTicketContents",
+            "Assign": {
+              "group_id": "{% $shuffle($weighted_ids)[0] %}",
+              "prompt": "{% $replace(${prompt}, '{{severity}}', $shuffle($severities)[0]) ~> $replace('{{length}}', $string(1 + ($ceil($random() * 4)))) ~> $replace('{{units}}', $random() >= 0.5 ? 'paragraphs' : 'sentences') %}"
+            }
+          },
+          "GenerateTicketContents": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::bedrock:invokeModel",
+            "Next": "CreateTicket",
+            "Arguments": {
+              "ModelId": "${bedrock_model}",
+              "Body": {
+                "messages": [
+                  {
+                    "role": "user",
+                    "content": [
+                      {
+                        "text": "{% $join([$prompt, $lookup($groups, $group_id)], '\n') %}"
+                      }
+                    ]
+                  }
+                ],
+                "inferenceConfig": {
+                  "maxTokens": 5120
+                }
+              }
+            },
+            "Assign": {
+              "content": "{% $parse($states.result.Body.output.message.content[0].text) %}"
+            }
+          },
+          "CreateTicket": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Output": "{% $states.result.Payload %}",
+            "Arguments": {
+              "FunctionName": "${lambda_ticket_create_name}",
+              "Payload": {
+                "payload": {
+                  "ticket": {
+                    "comment": {
+                      "body": "{% $content.body %}"
+                    },
+                    "group_id": "{% ${enable_hourly_tickets} ? null /* Don't set group for hourly tickets */ : $group_id %}",
+                    "subject": "{% $content.subject %}"
+                  }
+                }
+              }
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL"
+              }
+            ],
+            "Assign": {
+              "ticket_id": "{% $states.result.Payload.body.ticket.id %}"
+            },
+            "Next": "ScheduleClose"
+          },
+          "ScheduleClose": {
+            "Type": "Task",
+            "Arguments": {
+              "ActionAfterCompletion": "DELETE",
+              "ClientToken": "{% $string($ticket_id) %}",
+              "FlexibleTimeWindow": {
+                "Mode": "OFF"
+              },
+              "Name": "{% $join(['close', 'ticket', $string($ticket_id)], '-') %}",
+              "ScheduleExpression": "{% $join(['at(', $fromMillis(($millis() + 300000 /* 5 minutes */)) ~> $substring(0, 19), ')']) %}",
+              "Target": {
+                "Arn": "${lambda_ticket_update_arn}",
+                "DeadLetterConfig": {
+                  "Arn": "${dlq_arn}"
+                },
+                "RoleArn": "${schedule_role_arn}",
+                "Input": "{% $string({'path':{'ticket_id': $string($ticket_id)},'payload':{'ticket':{'status':'solved'}}}) %}"
+              }
+            },
+            "Resource": "arn:aws:states:::aws-sdk:scheduler:createSchedule",
+            "Next": "WaitABit"
+          },
+          "WaitABit": {
+            "Type": "Wait",
+            "Seconds": "{% $ceil($random() * 5) /* Add some jitter to avoid rate limiting */ %}",
+            "End": true
+          }
+        }
+      },
+      "End": true,
+      "Items": "{% [0..($num_tickets - 1)] %}",
+      "MaxConcurrency": 10
+    }
+  },
+  "QueryLanguage": "JSONata"
+}

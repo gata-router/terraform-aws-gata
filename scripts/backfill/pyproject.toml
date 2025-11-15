@@ -1,0 +1,52 @@
+[project]
+name = "gata-prepare-text"
+authors = [
+    {name = "Dave Hall", email = "me@davehall.com.au"},
+]
+description = "Lambda function to process text so it is ready for model training and vectorisation."
+
+requires-python = ">=3.13, <3.14" # version constraint matches lambda environment.
+
+dependencies = [
+  "aws-lambda-powertools==3.24.0", # Yes it is stupid, but it is needed when we import prepare-text
+  "boto3[crt]==1.42.39",
+  "contractions==0.1.73",
+  "types-boto3==1.42.39",
+  "zenpy==2.0.56",
+]
+
+dynamic = ["version"]
+
+[dependency-groups]
+dev = [
+  "ruff==0.14.14",
+  "ty==0.0.14",
+]
+
+[build-system]
+requires = [
+    "hatchling==1.28.0",
+    "hatch-vcs==0.5.0",
+]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+search_parent_directories = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.ruff.lint]
+# Rules listed at https://github.com/charliermarsh/ruff#supported-rules
+select = ["B", "D", "E", "F", "G", "I", "N", "S", "W", "ANN" ,"BLE", "C4", "C90", "CPY", "DTZ", "ERA", "PLW", "PT", "RET", "RUF", "SIM", "TRY", "UP"]
+ignore = ["D203", "D211", "D212", "E501", "F403", "F405"]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = ["B", "D", "E", "F", "G", "I", "N", "S", "W", "ANN" ,"BLE", "C4", "C90", "CPY", "DTZ", "ERA", "PLW", "PT", "RET", "RUF", "SIM", "TRY", "UP"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"handler/test_*" = ["S101", "S108"]

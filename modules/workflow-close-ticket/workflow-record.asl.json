@@ -1,0 +1,110 @@
+{
+    "Comment": "Update the ticket table with details of the ticket when closed",
+    "QueryLanguage": "JSONata",
+    "StartAt": "GetGroupMappings",
+    "States": {
+        "GetGroupMappings": {
+            "Type": "Task",
+            "Arguments": {
+                "Name": "${ssm_param_group_mappings}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+            "Assign": {
+                "Input": "{% $states.input %}",
+                "MappedGroups": "{% $parse($states.result.Parameter.Value) %}",
+                "ticket_id" : "{% $states.input.detail.id %}"
+            },
+            "Next": "ProcessTicketData"
+        },
+        "ProcessTicketData": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::states:startExecution.sync:2",
+            "Arguments": {
+                "StateMachineArn": "${sfn_ticket_data_arn}",
+                "Input": {
+                    "Ticket": {
+                        "ticket_id": "{% $ticket_id %}"
+                    },
+                    "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID": "{% $states.context.Execution.Id %}"
+                }
+            },
+            "Next": "UpdateDB",
+            "Assign": {
+                "Record": "{% $states.result.Output.Ticket %}"
+            }
+        },
+        "UpdateDB": {
+            "Type": "Task",
+            "Arguments":   {
+              "ResourceArn": "${db_cluster_arn}",
+              "SecretArn": "${db_secret_arn}",
+              "Database": "gata",
+              "Sql": "INSERT INTO ticket (id, processed_data, via_channel, probability, routed_by, created, initial_group_id, initial_group_id_mapped, closed, closed_group_id, closed_group_id_mapped, embedding) VALUES (:id, :processed_data, :via_channel::channel, 0.0, 'external'::router, :created, 0, 0, :closed, :closed_group_id::bigint, :closed_group_id_mapped::bigint, :embedding::vector) ON CONFLICT(id) DO UPDATE SET processed_data = :processed_data, closed = :closed, closed_group_id = :closed_group_id::bigint, closed_group_id_mapped = :closed_group_id_mapped::bigint, embedding = :embedding::vector",
+              "Parameters": [
+                {
+                  "Name": "id",
+                  "Value": {
+                    "LongValue": "{% $number($Record.id) %}"
+                  }
+                },
+                {
+                  "Name": "processed_data",
+                  "Value": {
+                    "StringValue": "{% $string($Record.processed_data) %}"
+                  }
+                },
+                {
+                  "Name": "via_channel",
+                  "Value": {
+                    "StringValue": "{% $Record.via.channel %}"
+                  }
+                },
+                {
+                  "Name": "created",
+                  "Value": {
+                    "LongValue": "{% $number($toMillis($Record.created_at) / 1000) /* ms to seconds */ %}"
+                  }
+                },
+                {
+                  "Name": "closed",
+                  "Value": {
+                    "LongValue": "{% $number($toMillis($Record.updated_at) / 1000) %}"
+                  }
+                },
+                {
+                  "Name": "closed_group_id",
+                  "Value": {
+                    "StringValue": "{% $string($Record.current_group_id) %}"
+                  }
+                },
+                {
+                  "Name": "closed_group_id_mapped",
+                  "Value": {
+                    "StringValue": "{% $string([$lookup($MappedGroups, $string($Record.current_group_id)), $Record.current_group_id][0]) %}"
+                  }
+                },
+                {
+                  "Name": "embedding",
+                  "Value": {
+                    "StringValue": "{% $string($Record.embeddings) %}"
+                  }
+                }
+              ]
+            },
+            "Resource": "arn:aws:states:::aws-sdk:rdsdata:executeStatement",
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "RdsData.DatabaseResumingException",
+                  "RdsData.DatabaseUnavailableException",
+                  "RdsData.RdsDataException"
+                ],
+                "IntervalSeconds": 5,
+                "MaxAttempts": 5,
+                "BackoffRate": 2
+              }
+            ],
+            "End": true
+        }
+    }
+}

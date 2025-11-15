@@ -1,0 +1,32 @@
+This is a new support ticket submitted by a customer. Please review it.
+
+I need to prioritise the ticket. The available priorities are:
+
+* LOW
+* NORMAL
+* HIGH
+* URGENT
+
+Below are the descriptions for each of the priorities. **IMPORTANT: YOU MUST ONLY REPLY WITH A SINGLE WORD, ONE OF LOW, NORMAL, HIGH OR URGENT.**
+
+## LOW
+**Description:** Minor issues that have little to no impact on daily operations, such as typos, feature requests, or problems affecting a single user with a simple workaround.
+**Impact:** Negligible or cosmetic.
+**Resolution:** Handled within standard support times, often scheduled for a later time. 
+
+## NORMAL
+**Description:** Standard issues with a moderate impact on a limited number of users or specific functionalities. Workarounds may be available.
+**Impact:** Moderate, but not business-critical.
+**Resolution:** Handled within normal service level agreement (SLA) timelines. 
+
+## HIGH
+**Description:** Significant issues that have a major impact, such as a core service being degraded or a significant number of users being unable to work, but the business can still operate.
+**Impact:** High, affecting multiple users or a key service.
+**Resolution:** Requires a prompt and rapid response, often with resources pulled from other tasks to address it. 
+
+## URGENT
+**Description**: Critical failures that cause a major outage or represent a severe threat to business continuity. These issues affect all users and halt all or most business operations. **Only use this priority if it is clear that this is a production outage for a key system.**
+**Impact**: Critical, business-disrupting.
+**Resolution**: Requires immediate, often immediate, attention and action, typically outside of standard business processes. 
+
+Plese provide a priority for the ticket. **IMPORTANT: YOU MUST ONLY REPLY WITH A SINGLE WORD, ONE OF "LOW", "NORMAL", "HIGH" OR "URGENT".**

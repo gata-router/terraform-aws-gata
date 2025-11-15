@@ -1,0 +1,188 @@
+{
+    "Comment": "Fine tune the models",
+    "StartAt": "LoadConfig",
+    "States": {
+        "LoadConfig": {
+            "Type": "Task",
+            "Arguments": {
+                "Path": "${ssm_base_path}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:ssm:getParametersByPath",
+            "Assign": {
+                "image_versions": "{% $merge($sort($states.result ~> | Parameters | {$substring(Name, $length('${ssm_base_path}')): Value}, ['Arn', 'DataType', 'LastModifiedDate', 'Name', 'Type', 'Value', 'Version'] |).Parameters) %}",
+                "BatchID": "{% $string($states.input.BatchID) /* must be a string */ %}"
+            },
+            "Next": "DefineDataPrepTask"
+        },
+        "DefineDataPrepTask": {
+            "Type": "Task",
+            "Arguments": {
+                "ContainerDefinitions": [
+                    {
+                        "Name": "{% $join(['${data_prep_task_prefix}', $BatchID]) %}",
+                        "Image": "{% $join(['${data_prep_ecr_image}', $image_versions.'version-data-prep'])%}",
+                        "Command": [
+                            "{% $BatchID %}"
+                        ],
+                        "Essential": true,
+                        "LogConfiguration": {
+                            "LogDriver": "awslogs",
+                            "Options": {
+                                "awslogs-group": "${data_prep_log_group}",
+                                "awslogs-region": "${region}",
+                                "awslogs-stream-prefix": "{% $join(['batch-', $BatchID]) %}"
+                            }
+                        },
+                        "Environment": [
+                            {
+                                "Name": "DB_ARN",
+                                "Value": "${db_cluster_arn}"
+                            },
+                            {
+                                "Name": "DB_SECRET_ARN",
+                                "Value": "${db_secret_arn}"
+                            },
+                            {
+                                "Name": "LOG_LEVEL",
+                                "Value": "INFO"
+                            },
+                            {
+                                "Name": "LOW_VOLUME_FALLBACK_LABEL",
+                                "Value": "${low_volume_fallback_label}"
+                            },
+                            {
+                                "Name": "TARGET_BUCKET",
+                                "Value": "${s3_bucket}"
+                            }
+                        ]
+                    }
+                ],
+                "Cpu": "1024",
+                "ExecutionRoleArn": "${data_prep_role_exec}",
+                "Family": "${data_prep_family}",
+                "Memory": "4096",
+                "NetworkMode": "awsvpc",
+                "RequiresCompatibilities": [
+                    "FARGATE"
+                ],
+                "TaskRoleArn": "${data_prep_role_task}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:ecs:registerTaskDefinition",
+            "Assign": {
+                "data_prep_task_arn": "{% $states.result.TaskDefinition.TaskDefinitionArn %}"
+            },
+            "Next": "RunDataPrepTask"
+        },
+        "RunDataPrepTask": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::ecs:runTask.sync",
+            "Arguments": {
+                "LaunchType": "FARGATE",
+                "Cluster": "${ecs_cluster_arn}",
+                "TaskDefinition": "{% $data_prep_task_arn %}",
+                "NetworkConfiguration": {
+                    "AwsvpcConfiguration": {
+                        "Subnets": "{% ${subnet_ids} %}",
+                        "SecurityGroups": [
+                            "${security_group_id}"
+                        ]
+                    }
+                }
+            },
+            "Next": "DeleteDataPrepDefinition"
+        },
+        "DeleteDataPrepDefinition": {
+            "Type": "Task",
+            "Arguments": {
+                "TaskDefinition": "{% $data_prep_task_arn %}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:ecs:deregisterTaskDefinition",
+            "Next": "FineTune"
+        },
+        "FineTune": {
+            "Type": "Parallel",
+            "Branches": [
+                {
+                    "StartAt": "FineTuneGeneral",
+                    "States": {
+                        "FineTuneGeneral": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                            "Arguments": {
+                                "StateMachineArn": "${sfn_general_arn}",
+                                "Input": {
+                                    "StatePayload": {
+                                        "BatchID": "{% $BatchID %}"
+                                    },
+                                    "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID": "{% $states.context.Execution.Id %}"
+                                }
+                            },
+                            "End": true
+                        }
+                    }
+                },
+                {
+                    "StartAt": "FindLowVolumeData",
+                    "States": {
+                        "FindLowVolumeData": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::aws-sdk:s3:getObject",
+                            "Arguments": {
+                                "Bucket": "${s3_bucket}",
+                                "Key": "{% $join(['training/gata-low-vol/', $BatchID, '/train/data.json']) %}"
+                            },
+                            "Catch": [
+                                {
+                                    "ErrorEquals": [
+                                        "S3.NoSuchKeyException"
+                                    ],
+                                    "Next": "SkipFineTuneLowVolume",
+                                    "Output": "{% {} /* We need this and the Assign or it errors when the file doesn't exist. Inspired by https://repost.aws/questions/QUPNMT2i5dQWSpifKcA4Avbw/output-isn-t-being-set-on-catch */%}",
+                                    "Assign": {}
+                                }
+                            ],
+                            "Next": "FineTuneLowVolume"
+                        },
+                        "FineTuneLowVolume": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                            "Arguments": {
+                                "StateMachineArn": "${sfn_low_volume_arn}",
+                                "Input": {
+                                    "StatePayload": {
+                                        "BatchID": "{% $BatchID %}"
+                                    },
+                                    "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID": "{% $states.context.Execution.Id %}"
+                                }
+                            },
+                            "End": true
+                        },
+                        "SkipFineTuneLowVolume": {
+                            "Type": "Pass",
+                            "End": true
+                        }
+                    }
+                }
+            ],
+            "Next": "EmitEvent"
+        },
+        "EmitEvent": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::events:putEvents",
+            "Arguments": {
+                "Entries": [
+                    {
+                        "Detail": {
+                            "batch_id": "{% $BatchID %}"
+                        },
+                        "DetailType": "finetune-complete",
+                        "EventBusName": "${event_bus_name}",
+                        "Source": "gata"
+                    }
+                ]
+            },
+            "End": true
+        }
+    },
+    "QueryLanguage": "JSONata"
+}

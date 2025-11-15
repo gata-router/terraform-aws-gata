@@ -1,0 +1,320 @@
+{
+    "Comment": "Handle newly opened Zendesk tickets.",
+    "QueryLanguage": "JSONata",
+    "StartAt": "ProcessTicketData",
+    "States": {
+        "ProcessTicketData": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::states:startExecution.sync:2",
+            "Arguments": {
+                "StateMachineArn": "${sfn_ticket_data_arn}",
+                "Input": {
+                    "AWS_STEP_FUNCTIONS_STARTED_BY_EXECUTION_ID": "{% $states.context.Execution.Id %}",
+                    "Ticket": {
+                        "ticket_id": "{% $states.input.detail.id %}"
+                    }
+                }
+            },
+            "Next": "GetGroupMappings",
+            "Assign": {
+                "allowed_priorities": ["low", "normal", "high", "urgent"],
+                "Record": "{% $merge([{'opened': ($toMillis($states.input.detail.created_at) / 1000), 'initial_assignment_group_id': [$states.result.Output.Ticket.group_id, 0][0], 'probability': '1.0', 'routed_by': 'external'}, $states.result.Output.Ticket]) %}",
+                "priority": "{% $states.input.detail.priority ? $lowercase($states.input.detail.priority) : '' %}"
+            }
+        },
+        "GetGroupMappings": {
+            "Type": "Task",
+            "Arguments": {
+                "Name": "${ssm_param_group_mappings}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+            "Assign": {
+                "MappedGroups": "{% $parse($states.result.Parameter.Value) %}"
+            },
+            "Next": "IsGroupSet"
+        },
+        "IsGroupSet": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $boolean($Record.initial_assignment_group_id) %}",
+                    "Next": "RecordTicket",
+                    "Comment": "GroupSet"
+                }
+            ],
+            "Default": "GetExcludedSubjects"
+        },
+        "GetExcludedSubjects": {
+            "Type": "Task",
+            "Arguments": {
+                "Name": "${ssm_param_exclude_subjects}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+            "Assign": {
+                "ExcludedSubjects": "{% $parse($states.result.Parameter.Value) %}"
+            },
+            "Next": "IsExcludedSubject"
+        },
+        "IsExcludedSubject": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $exists($lookup($ExcludedSubjects, $Record.title)) %}",
+                    "Next": "RouteTicket",
+                    "Assign": {
+                        "Record": "{% $merge([$Record, {'initial_assignment_group_id': $lookup($ExcludedSubjects, $Record.title), 'probability': '1.0', 'routed_by': 'gata-mapped'}]) %}"
+                    },
+                    "Comment": "SubjectExcluded"
+                }
+            ],
+            "Default": "PrioritiseTicket",
+            "Assign": {
+                "priority": null,
+                "priority_count": 0
+            }
+        },
+        "PrioritiseTicket": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::bedrock:invokeModel",
+            "Next": "IsAllowedPriority?",
+            "Arguments": {
+                "ModelId": "${bedrock_model}",
+                "Body": {
+                    "system": [
+                        {
+                            "text": "{% ${prompt} %}"
+                        }
+                    ],
+                    "messages": "{% [{'role':'user','content': [{'text': $Record.processed_data}]}] %}",
+                    "inferenceConfig": {
+                        "temperature": 0.1,
+                        "topP": 1,
+                        "maxTokens": 512
+                    }
+                }
+            },
+            "Assign": {
+                "priority": "{% $lowercase($states.result.Body.output.message.content[0].text) %}",
+                "priority_count": "{% $priority_count + 1 %}"
+            }
+        },
+        "IsAllowedPriority?": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Next": "PrioritiseTicket",
+                    "Condition": "{% $not($priority in $allowed_priorities) and $priority_count > 3 %}",
+                    "Comment": "NotAllowedPriority"
+                }
+            ],
+            "Default": "GetExcludedRequesters",
+            "Assign": {
+                "priority": "{% $priority in $allowed_priorities ? $priority : $Record.priority /* Fallback to current priority */ %}"
+            }
+        },
+        "GetExcludedRequesters": {
+            "Type": "Task",
+            "Arguments": {
+                "Name": "${ssm_param_exclude_requesters}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:ssm:getParameter",
+            "Assign": {
+                "ExcludedReporters": "{% $parse($states.result.Parameter.Value) %}"
+            },
+            "Next": "IsExcludedRequester"
+        },
+        "IsExcludedRequester": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $exists($lookup($ExcludedReporters, $string($Record.requester_id))) %}",
+                    "Next": "RouteTicket",
+                    "Assign": {
+                        "Record": "{% $merge([$Record, {'initial_assignment_group_id': $lookup($ExcludedReporters, $string($Record.requester_id)), 'probability': '1.0', 'routed_by': 'gata-mapped'}]) %}"
+                    },
+                    "Comment": "ExcludedRequester"
+                }
+            ],
+            "Default": "InferGroup"
+        },
+        "InferGroup": {
+            "Type": "Task",
+            "Arguments": {
+                "Body": {
+                    "text": "{% $Record.processed_data %}"
+                },
+                "EndpointName": "${sagemaker_endpoint_combined}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:sagemakerruntime:invokeEndpoint",
+            "Assign": {
+                "Record": "{% $merge([$Record, {'initial_assignment_group_id': $parse($states.result.Body) ~> $lookup('prediction') ~> $lookup('label'), 'probability': $parse($states.result.Body) ~> $lookup('prediction') ~> $lookup('probability') ~> $formatNumber('#0.00000'), 'routed_by': 'gata'}]) %}"
+            },
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "SageMakerRuntime.ModelErrorException",
+                        "SageMakerRuntime.ModelNotReadyException",
+                        "SageMakerRuntime.ThrottlingException"
+                    ],
+                    "BackoffRate": 2,
+                    "IntervalSeconds": 3,
+                    "MaxAttempts": 15,
+                    "Comment": "Retry on fail",
+                    "JitterStrategy": "FULL"
+                }
+            ],
+            "Next": "IsLowVolume"
+        },
+        "IsLowVolume": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $number($Record.initial_assignment_group_id) = 0 %}",
+                    "Next": "InferGroupLowVolume",
+                    "Comment": "LowVolume"
+                }
+            ],
+            "Default": "RouteTicket"
+        },
+        "InferGroupLowVolume": {
+            "Type": "Task",
+            "Arguments": {
+                "Body": {
+                    "text": "{% $Record.processed_data %}"
+                },
+                "EndpointName": "${sagemaker_endpoint_low_volume}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:sagemakerruntime:invokeEndpoint",
+            "Assign": {
+                "Record": "{% $merge([$Record, {'initial_assignment_group_id': $parse($states.result.Body) ~> $lookup('prediction') ~> $lookup('label'), 'probability': $parse($states.result.Body) ~> $lookup('prediction') ~> $lookup('probability') ~> $formatNumber('#0.00000'), 'routed_by': 'gata'}]) %}"
+            },
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "SageMakerRuntime.ModelErrorException",
+                        "SageMakerRuntime.ModelNotReadyException",
+                        "SageMakerRuntime.ThrottlingException"
+                    ],
+                    "BackoffRate": 2,
+                    "IntervalSeconds": 3,
+                    "MaxAttempts": 15,
+                    "Comment": "Retry on fail",
+                    "JitterStrategy": "FULL"
+                }
+            ],
+            "Next": "RouteTicket"
+        },
+        "RouteTicket": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${lambda_ticket_update_arn}:$LATEST",
+                "Payload": {
+                    "path": {
+                        "ticket_id": "{% $Record.id %}"
+                    },
+                    "payload": {
+                        "ticket": {
+                            "group_id": "{% $Record.initial_assignment_group_id %}",
+                            "priority": "{% $priority %}"
+                        }
+                    }
+                }
+            },
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.ResourceNotReadyException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                    ],
+                    "IntervalSeconds": 1,
+                    "MaxAttempts": 3,
+                    "BackoffRate": 2
+                }
+            ],
+            "Next": "RecordTicket"
+        },
+        "RecordTicket": {
+            "Type": "Task",
+            "Arguments": {
+                "ResourceArn": "${db_cluster_arn}",
+                "SecretArn": "${db_secret_arn}",
+                "Database": "gata",
+                "Sql": "INSERT INTO ticket (id, processed_data, via_channel, probability, routed_by, created, initial_group_id, initial_group_id_mapped, embedding) VALUES (:id, :processed_data, :via_channel::channel, :probability, :routed_by::router, :created, :initial_group_id::bigint, :initial_group_id_mapped::bigint, :embedding::vector)",
+                "Parameters": [
+                    {
+                        "Name": "id",
+                        "Value": {
+                            "LongValue": "{% $number($Record.id) %}"
+                        }
+                    },
+                    {
+                        "Name": "processed_data",
+                        "Value": {
+                            "StringValue": "{% $Record.processed_data %}"
+                        }
+                    },
+                    {
+                        "Name": "via_channel",
+                        "Value": {
+                            "StringValue": "{% $Record.via.channel %}"
+                        }
+                    },
+                    {
+                        "Name": "probability",
+                        "Value": {
+                            "DoubleValue": "{% $number($Record.probability) %}"
+                        }
+                    },
+                    {
+                        "Name": "routed_by",
+                        "Value": {
+                            "StringValue": "{% $Record.routed_by %}"
+                        }
+                    },
+                    {
+                        "Name": "created",
+                        "Value": {
+                            "LongValue": "{% $number($Record.opened) %}"
+                        }
+                    },
+                    {
+                        "Name": "initial_group_id_mapped",
+                        "Value": {
+                            "StringValue": "{% $string([$lookup($MappedGroups, $string($Record.initial_assignment_group_id)), $Record.initial_assignment_group_id][0]) /* See https://github.com/jsonata-js/jsonata/issues/732#issuecomment-2612206932 for explanation of syntax */  %}"
+                        }
+                    },
+                    {
+                        "Name": "initial_group_id",
+                        "Value": {
+                            "StringValue": "{% $string($Record.initial_assignment_group_id) %}"
+                        }
+                    },
+                    {
+                        "Name": "embedding",
+                        "Value": {
+                            "StringValue": "{% $string($Record.embeddings) %}"
+                        }
+                    }
+                ]
+            },
+            "Resource": "arn:aws:states:::aws-sdk:rdsdata:executeStatement",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "RdsData.DatabaseResumingException",
+                        "RdsData.DatabaseUnavailableException",
+                        "RdsData.RdsDataException"
+                    ],
+                    "IntervalSeconds": 5,
+                    "MaxAttempts": 5,
+                    "BackoffRate": 2
+                }
+            ],
+            "End": true
+        }
+    }
+}

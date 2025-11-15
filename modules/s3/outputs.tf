@@ -1,0 +1,11 @@
+# Copyright 2024, Dave Hall, Skwashd Services Pty Ltd <me@davehall.com.au>, All Rights Reserved
+
+output "bucket_arn" {
+  description = "ARN of the S3 bucket"
+  value       = aws_s3_bucket.this.arn
+}
+
+output "bucket_name" {
+  description = "Name of the S3 bucket"
+  value       = aws_s3_bucket.this.id
+}

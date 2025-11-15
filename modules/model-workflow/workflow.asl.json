@@ -1,0 +1,262 @@
+{
+    "Comment": "Train a new version of the Gata ticket triage model and deploy it",
+    "QueryLanguage": "JSONata",
+    "StartAt": "LoadConfig",
+    "States": {
+        "LoadConfig": {
+            "Type": "Task",
+            "Arguments": {
+                "Path": "${ssm_base_path}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:ssm:getParametersByPath",
+            "Assign": {
+                "image_versions": "{% $merge($sort($states.result ~> | Parameters | {$substring(Name, $length('${ssm_base_path}')): Value}, ['Arn', 'DataType', 'LastModifiedDate', 'Name', 'Type', 'Value', 'Version'] |).Parameters) %}",
+                "BatchID": "{% $states.input.StatePayload.BatchID %}",
+                "ModelName": "{% $join(['${model_namespace}', '-', $states.input.StatePayload.BatchID]) %}"
+            },
+            "Next": "RunFineTuneJob"
+        },
+        "RunFineTuneJob": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sagemaker:createTrainingJob.sync",
+            "Arguments": {
+                "TrainingJobName": "{% $join(['${model_namespace}-finetune-', $string($BatchID), $string($floor($random() * 9999) ~> $formatNumber('#0')) ]) %}",
+                "RoleArn": "${finetune_sagemaker_role_arn}",
+                "AlgorithmSpecification": {
+                    "EnableSageMakerMetricsTimeSeries": true,
+                    "MetricDefinitions": [
+                        {
+                            "Name": "train_loss",
+                            "Regex": "train_loss: ([0-9\\.]+)"
+                        },
+                        {
+                            "Name": "eval_loss",
+                            "Regex": "'eval_loss': ([0-9\\.]+)"
+                        },
+                        {
+                            "Name": "eval_accuracy",
+                            "Regex": "'eval_accuracy': ([0-9\\.]+)"
+                        },
+                        {
+                            "Name": "eval_precision",
+                            "Regex": "'eval_precision': ([0-9\\.]+)"
+                        },
+                        {
+                            "Name": "eval_recall",
+                            "Regex": "'eval_recall': ([0-9\\.]+)"
+                        },
+                        {
+                            "Name": "eval_f1",
+                            "Regex": "'eval_f1': ([0-9\\.]+)"
+                        }
+                    ],
+                    "TrainingImage": "{% $join(['${finetune_image_url}', $image_versions.'version-finetune'])%}",
+                    "TrainingImageConfig": {
+                        "TrainingRepositoryAccessMode": "Platform"
+                    },
+                    "TrainingInputMode": "FastFile"
+                },
+                "CheckpointConfig": {
+                    "S3Uri": "{% $join(['s3://${model_bucket}/model/${model_namespace}/', $string($BatchID), '/model/checkpoints/']) %}"
+                },
+                "EnableManagedSpotTraining": "{% $boolean(${train_on_spot}) %}",
+                "EnableNetworkIsolation": true,
+                "HyperParameters": {
+                    "per_device_train_batch_size": "16",
+                    "num_train_epochs": "4",
+                    "learning_rate": "0.00002",
+                    "weight_decay": "0.01",
+                    "warmup_ratio": "0.1",
+                    "gradient_accumulation_steps": "4",
+                    "gradient_checkpointing": "true"
+                },
+                "InputDataConfig": [
+                    {
+                        "ChannelName": "train",
+                        "CompressionType": "None",
+                        "ContentType": "application/json",
+                        "DataSource": {
+                            "S3DataSource": {
+                                "S3DataType": "S3Prefix",
+                                "S3Uri": "{% $join(['s3://${data_bucket}/training/${model_namespace}/', $string($BatchID), '/train/']) %}"
+                            }
+                        },
+                        "ShuffleConfig": {
+                            "Seed": 42
+                        }
+                    },
+                    {
+                        "ChannelName": "test",
+                        "CompressionType": "None",
+                        "ContentType": "application/json",
+                        "DataSource": {
+                            "S3DataSource": {
+                                "S3DataType": "S3Prefix",
+                                "S3Uri": "{% $join(['s3://${data_bucket}/training/${model_namespace}/', $string($BatchID), '/test/']) %}"
+                            }
+                        },
+                        "ShuffleConfig": {
+                            "Seed": 24
+                        }
+                    }
+                ],
+                "OutputDataConfig": {
+                    "CompressionType": "NONE",
+                    "KmsKeyId": "${kms_key_arn}",
+                    "S3OutputPath": "{% $join(['s3://${model_bucket}/model/${model_namespace}/',  $string($BatchID), '/model']) %}"
+                },
+                "ResourceConfig": {
+                    "InstanceCount": 1,
+                    "InstanceType": "${finetune_instance_type}",
+                    "VolumeSizeInGB": 30
+                },
+                "StoppingCondition": {
+                    "MaxRuntimeInSeconds": "{% $number(${finetune_max_exec_time}) %}",
+                    "MaxWaitTimeInSeconds": "{% ${finetune_max_exec_time} * 3 %}"
+                },
+                "Tags": "{% ${tags} /* hack to keep the template valid */ %}"
+            },
+            "Assign": {
+                "BatchID": "{% $string($BatchID) %}",
+                "FineTune": "{% $states.result %}"
+            },
+            "Next": "CreateModel",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "SageMaker.InternalFailure",
+                        "SageMaker.ResourceInUse",
+                        "SageMaker.ResourceLimitExceeded",
+                        "SageMaker.ServiceUnavailable",
+                        "SageMaker.ThrottlingException"
+                    ],
+                    "BackoffRate": 1,
+                    "IntervalSeconds": 300,
+                    "MaxAttempts": 5,
+                    "JitterStrategy": "FULL",
+                    "MaxDelaySeconds": 300,
+                    "Comment": "TryAgain"
+                }
+            ]
+        },
+        "CreateModel": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sagemaker:createModel",
+            "Arguments": {
+                "ModelName": "{% $ModelName %}",
+                "PrimaryContainer": {
+                    "Image": "{% $join(['${inference_image_url}', $image_versions.'version-inference'])%}",
+                    "ModelDataUrl": "{% $join([$FineTune.ModelArtifacts.S3ModelArtifacts, '/model.tar.gz']) %}"
+                },
+                "ExecutionRoleArn": "${inference_sagemaker_role_arn}"
+            },
+            "Assign": {
+                "Model": "{% $states.result %}"
+            },
+            "Next": "CreateEndpointConfig"
+        },
+        "CreateEndpointConfig": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sagemaker:createEndpointConfig",
+            "Arguments": {
+                "EnableNetworkIsolation": false,
+                "EndpointConfigName": "{% $ModelName %}",
+                "KmsKeyId": "${kms_key_arn}",
+                "ProductionVariants": [
+                    {
+                        "EnableSSMAccess": false,
+                        "InitialVariantWeight": 1,
+                        "ModelName": "{% $ModelName %}",
+                        "ServerlessConfig": {
+                            "MaxConcurrency": 20,
+                            "MemorySizeInMB": 2048
+                        },
+                        "VariantName": "Primary"
+                    }
+                ]
+            },
+            "Assign": {
+                "CreateEndpointConfig": "{% $states.result %}",
+                "EndpointConfigReady": false
+            },
+            "Next": "WaitForEndpointConfig"
+        },
+        "WaitForEndpointConfig": {
+            "Type": "Wait",
+            "Seconds": 15,
+            "Next": "UpdateEndpoint",
+            "Comment": "This is needed to ensure the config is written properly. sagemaker:describeEndpointConfig isn't available so we can only sleep. See https://docs.aws.amazon.com/sagemaker/latest/APIReference/API_CreateEndpointConfig.html"
+        },
+        "UpdateEndpoint": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sagemaker:updateEndpoint",
+            "Arguments": {
+                "EndpointConfigName": "{% $ModelName %}",
+                "EndpointName": "${model_namespace}"
+            },
+            "Assign": {
+                "UpdateEndpoint": "{% $states.result %}"
+            },
+            "Next": "WaitForEndpoint",
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "SageMaker.AmazonSageMakerException"
+                    ],
+                    "Next": "CreateEndpoint",
+                    "Comment": "NotFound"
+                }
+            ]
+        },
+        "CreateEndpoint": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sagemaker:createEndpoint",
+            "Arguments": {
+                "EndpointConfigName": "{% $ModelName %}",
+                "EndpointName": "${model_namespace}"
+            },
+            "Next": "WaitForEndpoint"
+        },
+        "WaitForEndpoint": {
+            "Type": "Wait",
+            "Seconds": 300,
+            "Next": "CheckEndpoint"
+        },
+        "CheckEndpoint": {
+            "Type": "Task",
+            "Arguments": {
+                "EndpointName": "${model_namespace}"
+            },
+            "Resource": "arn:aws:states:::aws-sdk:sagemaker:describeEndpoint",
+            "Assign": {
+                "EndpointStatus": "{% $states.result.EndpointStatus %}",
+                "EndpointStatusFailureReason": "{% $exists($states.result.FailureReason) ? $states.result.FailureReason : '' %}"
+            },
+            "Next": "EndpointReady"
+        },
+        "EndpointReady": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $EndpointStatus = 'InService' %}",
+                    "Next": "Done",
+                    "Comment": "Ready"
+                },
+                {
+                    "Condition": "{% $EndpointStatus = 'Failed' %}",
+                    "Next": "EndpointFail",
+                    "Comment": "Failed"
+                }
+            ],
+            "Default": "WaitForEndpoint"
+        },
+        "Done": {
+            "Type": "Succeed"
+        },
+        "EndpointFail": {
+            "Type": "Fail",
+            "Error": "FailedToUpdateEndpoint",
+            "Cause": "{% $EndpointStatusFailureReason %}"
+        }
+    }
+}
