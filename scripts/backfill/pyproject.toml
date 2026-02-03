@@ -11,7 +11,7 @@ dependencies = [
   "aws-lambda-powertools==3.24.0", # Yes it is stupid, but it is needed when we import prepare-text
   "boto3[crt]==1.42.39",
   "contractions==0.1.73",
-  "types-boto3==1.42.39",
+  "types-boto3==1.42.40",
   "zenpy==2.0.56",
 ]
 
