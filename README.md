@@ -1,18 +1,18 @@
-# GATA Ticket Router
+# Gata Ticket Router
 
-GATA triages and routes Zendesk support tickets. Rather than using humans to do this work, GATA used machine learning and LLMs to analyse the tickets. They are prioritised based on content and assigned to the appropriate group. All of the tooling runs on AWS, with the only data exchange occurring with Zendesk.
+Gata triages and routes Zendesk support tickets. Rather than using humans to do this work, Gata used machine learning and LLMs to analyse the tickets. They are prioritised based on content and assigned to the appropriate group. All of the tooling runs on AWS, with the only data exchange occurring with Zendesk.
 
 Operational costs vary, with per ticket costs reducing with greater volume. The target price is 0.02-0.05USD per ticket. This includes all AWS infrastructure and operations such as weekly training, routing, prioritisation and summarisation. 
 
-The ideal user of GATA is a team with at least 1000 tickets per month where 80% or more are not classified. The model performs well with both balanced and uneven distribution of ticket categories.
+The ideal user of Gata is a team with at least 1000 tickets per month where 80% or more are not classified. The model performs well with both balanced and uneven distribution of ticket categories.
 
 ## Quick Start
 
-If you want to skip the 🧇, [jump straight to the quick start](examples/quickstart/README.md) to install and start using GATA.
+If you want to skip the 🧇, [jump straight to the quick start](examples/quickstart/README.md) to install and start using Gata.
 
 ## Models
 
-GATA uses the most appropriate model for each task. All models run in your AWS account.
+Gata uses the most appropriate model for each task. All models run in your AWS account.
 
 Ticket are routed using BERT. The model is fine tuned on your historic ticket data. It uses group assignment from closed tickets the label for fine tuning.
 
@@ -22,7 +22,7 @@ When a ticket is closed Amazon Nova Lite summarises the underlying issue and act
 
 ## Dependencies
 
-GATA is built on several other projects.
+Gata is built on several other projects.
 
 PicoFun provides the Zendesk API clients. This adds a lot of small Lambda functions to your environment
 
@@ -32,7 +32,7 @@ EventBus++ provides the EventBridge event bus implementation.
 
 ## Quota Increases
 
-In order to run GATA you need to request the following AWS quota increases:
+In order to run Gata you need to request the following AWS quota increases:
 
 * [SageMaker: Maximum total concurrency that can be allocated across all serverless endpoints](https://us-east-1.console.aws.amazon.com/servicequotas/home/services/sagemaker/quotas/L-96300102) - 50
 * [SageMaker: ml.g6.xlarge for spot training job usage](https://us-east-1.console.aws.amazon.com/servicequotas/home/services/sagemaker/quotas/L-A886A53A) - 2
@@ -44,19 +44,35 @@ AWS no longer requires you to request access to foundation models. Nova Micro an
 
 ## Disclaimer
 
-GATA is offered as is. You are responsible for reviewing the code and determining if it appropriate for your use case. You are solely responsible for any costs incurred from the use of any GATA components.
+Gata is offered as is. You are responsible for reviewing the code and determining if it appropriate for your use case. You are solely responsible for any costs incurred from the use of any Gata components.
 
-No representations are made in relation to the ongoing maintenance of this project. You are responsible for maintaining GATA in your environment.
+No representations are made in relation to the ongoing maintenance of this project. You are responsible for maintaining Gata in your environment.
 
 ## FAQ
 
 ### Project
 
+#### Is Gata self hosted?
+
+Yes! Gata runs in your own AWS account.
+
+#### Can you host it for me?
+
+Probably not, but I can [help you deploy Gata in your own AWS environment](https://davehall.com.au/contact)
+
 #### Do you offer support?
 
 Yes! If you experience a problem, raise an issue.
 
-If you need support for your business or help deploying GATA, please [contact me](https://davehall.com.au/contact).
+If you need support for your business or help deploying Gata, please [contact me](https://davehall.com.au/contact).
+
+#### Does Gata support Jira / ServiceNow / Intercom / etc?
+
+Gata currently only supports Zendesk tickets. Many of the components could be reused to build a similar system for another support ticket platform.
+
+#### How does Gata learn from reassigned tickets?
+
+Gata is trained using the group assigned when the ticket is closed. Each week a new model is trained using the last 3 months of closed tickets. This means it doesn't take long for the model to learn from its mistakes.
 
 #### When will you implement feature X?
 
