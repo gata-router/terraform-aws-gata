@@ -5,7 +5,7 @@ locals {
 }
 
 module "eventbus_gata" {
-  source = "git::ssh://git@github.com/proactiveops/eventbus?ref=a2ae81c" # main @ 20260125
+  source = "git::https://github.com/proactiveops/eventbus?ref=a2ae81c" # main @ 20260125
 
   name = var.application_name
 
@@ -29,7 +29,7 @@ module "eventbus_gata" {
 }
 
 module "eventbus_zendesk" {
-  source = "git::ssh://git@github.com/proactiveops/eventbus?ref=a2ae81c" # main @ 20260125
+  source = "git::https://github.com/proactiveops/eventbus?ref=a2ae81c" # main @ 20260125
 
   name = local.zendesk_bus_name
 
@@ -109,7 +109,7 @@ module "eventbus_zendesk" {
 }
 
 module "eventbus_zendesk_dlq" {
-  source = "git::ssh://git@github.com/proactiveops/eventbus//modules/dlq?ref=a2ae81c" # main @ 20260125
+  source = "git::https://@github.com/proactiveops/eventbus//modules/dlq?ref=a2ae81c" # main @ 20260125
 
   kms_key_id = aws_kms_key.this.arn
 

@@ -129,10 +129,10 @@ That's a statement, not a question, but I'll take it as a compliment.
 | <a name="module_db"></a> [db](#module\_db) | ./modules/db | n/a |
 | <a name="module_ecr"></a> [ecr](#module\_ecr) | ./modules/ecr | n/a |
 | <a name="module_ecr_github_actions"></a> [ecr\_github\_actions](#module\_ecr\_github\_actions) | ./modules/oidc-pipeline | n/a |
-| <a name="module_eventbus_gata"></a> [eventbus\_gata](#module\_eventbus\_gata) | git::ssh://git@github.com/proactiveops/eventbus | a2ae81c |
+| <a name="module_eventbus_gata"></a> [eventbus\_gata](#module\_eventbus\_gata) | git::https://github.com/proactiveops/eventbus | a2ae81c |
 | <a name="module_eventbus_handlers"></a> [eventbus\_handlers](#module\_eventbus\_handlers) | ./modules/eventbus | n/a |
-| <a name="module_eventbus_zendesk"></a> [eventbus\_zendesk](#module\_eventbus\_zendesk) | git::ssh://git@github.com/proactiveops/eventbus | a2ae81c |
-| <a name="module_eventbus_zendesk_dlq"></a> [eventbus\_zendesk\_dlq](#module\_eventbus\_zendesk\_dlq) | git::ssh://git@github.com/proactiveops/eventbus//modules/dlq | a2ae81c |
+| <a name="module_eventbus_zendesk"></a> [eventbus\_zendesk](#module\_eventbus\_zendesk) | git::https://github.com/proactiveops/eventbus | a2ae81c |
+| <a name="module_eventbus_zendesk_dlq"></a> [eventbus\_zendesk\_dlq](#module\_eventbus\_zendesk\_dlq) | git::https://@github.com/proactiveops/eventbus//modules/dlq | a2ae81c |
 | <a name="module_finetune_workflow"></a> [finetune\_workflow](#module\_finetune\_workflow) | ./modules/finetune-workflow | n/a |
 | <a name="module_firehose"></a> [firehose](#module\_firehose) | ./modules/firehose | n/a |
 | <a name="module_mock_data"></a> [mock\_data](#module\_mock\_data) | ./modules/mock-data | n/a |
