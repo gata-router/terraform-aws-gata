@@ -66,7 +66,7 @@ Yes! If you experience a problem, raise an issue.
 
 If you need support for your business or help deploying Gata, please [contact me](https://davehall.com.au/contact).
 
-#### Does Gata support Jira / ServiceNow / Intercom / etc?
+#### Does Gata support Jira / ServiceNow / Intercom / Help Scout / etc?
 
 Gata currently only supports Zendesk tickets. Many of the components could be reused to build a similar system for another support ticket platform.
 
