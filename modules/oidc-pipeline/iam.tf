@@ -11,8 +11,6 @@ locals {
     : ["repo:${var.github_org}/${var.github_repo}:ref:refs/tags/*", "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main"]
   )
 
-  github_url = "https://${local.github_domain}"
-
   role_name = "${var.role_namespace}github-actions-${var.tags["environment"]}-${var.github_repo}"
 }
 

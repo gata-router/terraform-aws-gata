@@ -5,7 +5,3 @@ data "aws_bedrock_foundation_model" "titan_embed" {
 }
 
 data "aws_caller_identity" "current" {}
-
-data "aws_partition" "current" {}
-
-data "aws_region" "current" {}
