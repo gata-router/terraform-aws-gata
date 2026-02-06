@@ -4,7 +4,7 @@ updates:
     directories:
       - "/"
       - "/modules/*/"
-      - "/examples/*/"
+      # "/examples/*/" fails because the picofun lambdas aren't present in the repo.
     schedule:
       interval: "daily"
       time: "03:14"
