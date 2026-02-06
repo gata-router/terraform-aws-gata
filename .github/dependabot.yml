@@ -24,6 +24,17 @@ updates:
       interval: "daily"
       time: "03:44"
       timezone: "Australia/Melbourne"
+    groups:
+      boto3:
+        patterns:
+          - "*boto3*"
+          - "botocore*"
+      ruff-ty:
+        patterns:
+          # These are some of the fastest moving dependencies. Grouping to make my life easier.
+          # They regularly have updates and so cause merge conflict.
+          - "ruff"
+          - "ty"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
