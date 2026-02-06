@@ -38,6 +38,7 @@ resource "aws_iam_role" "sfn_create_ticket" {
   tags = var.tags
 }
 
+# trivy:ignore:AVD-AWS-0342 The SFn needs to pass the roles to SageMaker resources or they won't work.
 data "aws_iam_policy_document" "sfn_create_ticket" {
 
   statement {

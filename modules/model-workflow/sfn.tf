@@ -99,7 +99,7 @@ resource "aws_iam_role" "sfn_model_pipeline" {
   tags = var.tags
 }
 
-# trivy:ignore:avd-aws-0342 The SFn needs to pass the roles to SageMaker resources or they won't work.
+# trivy:ignore:AVD-AWS-0342 The SFn needs to pass the roles to SageMaker resources or they won't work.
 data "aws_iam_policy_document" "sfn_model_pipeline" {
 
   statement {
