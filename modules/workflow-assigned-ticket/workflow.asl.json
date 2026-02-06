@@ -1,99 +1,109 @@
 {
-    "Comment": "A description of my state machine",
-    "StartAt": "FindTickets",
-    "States": {
-        "FindTickets": {
-            "Type": "Task",
-            "Arguments": {
-                "ResourceArn": "MyData",
-                "Database": "data",
-                "FormatRecordsAs": "JSON",
-                "SecretArn": "MyData",
-                "Sql": "SELECT id FROM ticket WHERE id != :id ORDER BY embedding <=> (SELECT embedding FROM ticket WHERE id = :id) LIMIT 5;",
-                "Parameters": {
-                    ":id": "{% $states.input.detail.input.ticket_event.ticket.id %}"
-                }
-            },
-            "Resource": "arn:aws:states:::aws-sdk:rdsdata:executeStatement",
-            "Retry": [
-                {
-                    "ErrorEquals": [
-                        "RdsData.DatabaseResumingException",
-                        "RdsData.DatabaseUnavailableException",
-                        "RdsData.RdsDataException"
-                    ],
-                    "IntervalSeconds": 5,
-                    "MaxAttempts": 5,
-                    "BackoffRate": 2
-                }
-            ],
-            "Assign": {
-                "Tickets": "{% $parse($states.result.formattedRecords) %}",
-                "TicketId": "{% $states.input.detail.input.ticket_event.ticket.id %}"
-            },
-            "Next": "LoadTickets"
+  "Comment": "A description of my state machine",
+  "StartAt": "FindTickets",
+  "States": {
+    "FindTickets": {
+      "Type": "Task",
+      "Arguments": {
+        "ResourceArn": "${db_cluster_arn}",
+        "Database": "gata",
+        "FormatRecordsAs": "JSON",
+        "SecretArn": "${db_secret_arn}",
+        "Sql": "SELECT id FROM ticket WHERE id != :id ORDER BY embedding <=> (SELECT embedding FROM ticket WHERE id = :id) LIMIT 5;",
+        "Parameters": [
+          {
+            "Name": "id",
+            "Value": {
+              "LongValue": "{% $states.input.detail.id %}"
+            }
+          }
+        ]
+      },
+      "Resource": "arn:aws:states:::aws-sdk:rdsdata:executeStatement",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "RdsData.DatabaseResumingException",
+            "RdsData.DatabaseUnavailableException",
+            "RdsData.RdsDataException"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 5,
+          "BackoffRate": 2
+        }
+      ],
+      "Assign": {
+        "Tickets": "{% $map($parse($states.result.FormattedRecords), function($v, $k) {$v.id} ) %}",
+        "TicketId": "{% $states.input.detail.id %}"
+      },
+      "Next": "LoadTickets"
+    },
+    "LoadTickets": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
         },
-        "LoadTickets": {
-            "Type": "Map",
-            "ItemProcessor": {
-                "ProcessorConfig": {
-                    "Mode": "INLINE"
-                },
-                "StartAt": "GetTicket",
-                "States": {
-                    "GetTicket": {
-                        "Type": "Task",
-                        "Resource": "arn:aws:states:::lambda:invoke",
-                        "Output": "{% $states.result.Payload.body %}",
-                        "Arguments": {
-                            "FunctionName": "${lambda_ticket_get_arn}:$LATEST",
-                            "Payload": "{% $states.input %}"
-                        },
-                        "Retry": [
-                            {
-                                "ErrorEquals": [
-                                    "Lambda.ServiceException",
-                                    "Lambda.AWSLambdaException",
-                                    "Lambda.SdkClientException",
-                                    "Lambda.TooManyRequestsException"
-                                ],
-                                "IntervalSeconds": 1,
-                                "MaxAttempts": 3,
-                                "BackoffRate": 2,
-                                "JitterStrategy": "FULL"
-                            }
-                        ],
-                        "End": true
-                    }
-                }
-            },
-            "Output": {
-                "RelatedTickets": "{% $join($map($states.result, function($o) {$join(['[', $o.ticket.id, ' ', $o.ticket.subject, '](/tickets/', $o.ticket.id, ')'])}), '\n*') %}"
-            },
-            "Next": "AddComment"
-        },
-        "AddComment": {
+        "StartAt": "GetTicket",
+        "States": {
+          "GetTicket": {
             "Type": "Task",
             "Resource": "arn:aws:states:::lambda:invoke",
-            "Output": "{% $states.result.Payload %}",
+            "Output": "{% $states.result.Payload.body %}",
             "Arguments": {
-                "FunctionName": "{% '${lambda_ticket_update_name}:$LATEST' %}",
-                "Payload": {
-                    "path": {
-                        "ticket_id": "{% $ticket_id %}"
-                    },
-                    "payload": {
-                        "ticket": {
-                            "comment": {
-                                "body": "{% $join(['## Related tickets:\n ', $states.input.RelatedTickets, ' \n🤖 Tickets found by [GATA](https://gata.works) 🐱', ' '], '\n') /* The spaces for new empty lines */ %}",
-                                "public": false
-                            }
-                        }
-                    }
+              "FunctionName": "${lambda_ticket_get_name}:$LATEST",
+              "Payload": {
+                "path": {
+                  "ticket_id": "{% $states.input %}"
                 }
+              }
             },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL"
+              }
+            ],
             "End": true
+          }
         }
+      },
+      "Output": {
+        "RelatedTickets": "{% $join($map($states.result, function($o) {$join(['* #', $o.ticket.id & '', ': ', $o.ticket.subject])}), '\n') %}"
+      },
+      "Next": "AddComment",
+      "Items": "{% $Tickets %}"
     },
-    "QueryLanguage": "JSONata"
+    "AddComment": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Output": "{% $states.result.Payload %}",
+      "Arguments": {
+        "FunctionName": "{% '${lambda_ticket_update_name}:$LATEST' %}",
+        "Payload": {
+          "path": {
+            "ticket_id": "{% $TicketId %}"
+          },
+          "payload": {
+            "ticket": {
+              "comment": {
+                "body": "{% $join(['### Related tickets:\n', $states.input.RelatedTickets, ' \n \n---\n🤖 Tickets found by [GATA](https://gata.works) 🐱', ' '], '\n') /* The spaces for new empty lines */ %}",
+                "public": false
+              }
+            }
+          }
+        }
+      },
+      "End": true
+    }
+  },
+  "QueryLanguage": "JSONata"
 }

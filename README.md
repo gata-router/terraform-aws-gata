@@ -139,6 +139,7 @@ That's a statement, not a question, but I'll take it as a compliment.
 | <a name="module_mock_router"></a> [mock\_router](#module\_mock\_router) | ./modules/mock-ticket-update | n/a |
 | <a name="module_prepare_text"></a> [prepare\_text](#module\_prepare\_text) | ./modules/prepare-text | n/a |
 | <a name="module_s3"></a> [s3](#module\_s3) | ./modules/s3 | n/a |
+| <a name="module_workflow_assigned_ticket"></a> [workflow\_assigned\_ticket](#module\_workflow\_assigned\_ticket) | ./modules/workflow-assigned-ticket | n/a |
 | <a name="module_workflow_close_ticket"></a> [workflow\_close\_ticket](#module\_workflow\_close\_ticket) | ./modules/workflow-close-ticket | n/a |
 | <a name="module_workflow_finetune_general"></a> [workflow\_finetune\_general](#module\_workflow\_finetune\_general) | ./modules/model-workflow | n/a |
 | <a name="module_workflow_finetune_low_volume"></a> [workflow\_finetune\_low\_volume](#module\_workflow\_finetune\_low\_volume) | ./modules/model-workflow | n/a |
