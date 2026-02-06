@@ -35,29 +35,6 @@ data "aws_iam_policy_document" "sfn_new_ticket" {
 
   statement {
     actions = [
-      "bedrock:InvokeModel",
-    ]
-
-    resources = [
-      data.aws_bedrock_foundation_model.priority.model_arn,
-    ]
-  }
-
-  # This is needed to allow synchronous invocations of the nested step function
-  statement {
-    actions = [
-      "events:DescribeRule",
-      "events:PutRule",
-      "events:PutTargets",
-    ]
-
-    resources = [
-      provider::aws::arn_build(data.aws_partition.current.partition, "events", data.aws_region.current.name, data.aws_caller_identity.current.account_id, "rule/StepFunctionsGetEventsForStepFunctionsExecutionRule"),
-    ]
-  }
-
-  statement {
-    actions = [
       "kms:Decrypt",
       "kms:Encrypt",
       "kms:GenerateDataKey",
@@ -75,7 +52,8 @@ data "aws_iam_policy_document" "sfn_new_ticket" {
 
     # trivy:ignore:AVD-AWS-0143 Referencing all versions of the lambda functions
     resources = [
-      provider::aws::arn_build(data.aws_partition.current.partition, "lambda", data.aws_region.current.name, data.aws_caller_identity.current.account_id, "function:${var.lambda_ticket_update}:*"),
+      "${var.lambda_ticket_get_arn}:*",
+      "${var.lambda_ticket_update_arn}:*",
     ]
   }
 
@@ -109,58 +87,11 @@ data "aws_iam_policy_document" "sfn_new_ticket" {
 
   statement {
     actions = [
-      "sagemaker:invokeEndpoint"
-    ]
-
-    resources = [
-      var.inference_endpoints["general"],
-      var.inference_endpoints["low_volume"],
-    ]
-  }
-
-  statement {
-    actions = [
       "secretsmanager:GetSecretValue",
     ]
 
     resources = [
       var.db_secret_arn,
-    ]
-  }
-
-  statement {
-    actions = [
-      "ssm:GetParameter",
-    ]
-
-    resources = [
-      local.ssm_params.exclude_requesters.arn,
-      local.ssm_params.exclude_subjects.arn,
-      local.ssm_params.group_mappings.arn,
-    ]
-  }
-
-  statement {
-    actions = [
-      "states:DescribeExecution",
-      "states:StopExecution",
-    ]
-
-    # trivy:ignore:AVD-AWS-0143 Need wildcards when referencing executions
-    resources = [
-      "${local.sfn_ticket_data_exec_arn}:*",
-    ]
-  }
-
-  statement {
-    actions = [
-      "states:StartExecution",
-    ]
-
-    # trivy:ignore:AVD-AWS-0143 Need wildcards to reference all possible versions of the state machine
-    resources = [
-      local.sfn_ticket_data_arn,
-      "${local.sfn_ticket_data_arn}:*"
     ]
   }
 
