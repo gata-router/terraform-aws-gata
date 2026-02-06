@@ -99,38 +99,40 @@ def _lambda_environment(ssm: SSMClient) -> None:
 @pytest.fixture
 def mock_ticket() -> str:
     """Return a mock ticket as a JSON string."""
-    return json.dumps({
-        "account_id": 12345,
-        "detail": {
-            "actor_id": 123456,
-            "assignee_id": "4321",
-            "brand_id": None,
-            "created_at": "2022-11-22T22:11:22Z",
-            "custom_status": 1234,
-            "description": "Test ticket description",
-            "external_id": None,
-            "form_id": None,
-            "group_id": "2468",
-            "id": 24,
-            "is_public": True,
-            "organization_id": None,
-            "priority": "normal",
-            "requester_id": 1234,
-            "status": "pending",
-            "subject": "Test Ticket Subject",
-            "submitter_id": None,
-            "tags": "connecting_to_platform sample_ticket",
-            "type": "incident",
-            "updated_at": "2022-11-22T22:11:22Z",
-            "via": {"channel": "web_form"},  # Updated: 'source' field removed
-        },
-        "event": {},
-        "id": "de305d54-75b4-431b-adb2-eb6b9e546013",
-        "subject": "ticket:24:created",
-        "time": "2022-11-22T22:11:22Z",
-        "type": "zen:event-type:ticket.created",
-        "zendesk_event_version": "2022-11-22T22:11:22Z",
-    })
+    return json.dumps(
+        {
+            "account_id": 12345,
+            "detail": {
+                "actor_id": 123456,
+                "assignee_id": "4321",
+                "brand_id": None,
+                "created_at": "2022-11-22T22:11:22Z",
+                "custom_status": 1234,
+                "description": "Test ticket description",
+                "external_id": None,
+                "form_id": None,
+                "group_id": "2468",
+                "id": 24,
+                "is_public": True,
+                "organization_id": None,
+                "priority": "normal",
+                "requester_id": 1234,
+                "status": "pending",
+                "subject": "Test Ticket Subject",
+                "submitter_id": None,
+                "tags": "connecting_to_platform sample_ticket",
+                "type": "incident",
+                "updated_at": "2022-11-22T22:11:22Z",
+                "via": {"channel": "web_form"},  # Updated: 'source' field removed
+            },
+            "event": {},
+            "id": "de305d54-75b4-431b-adb2-eb6b9e546013",
+            "subject": "ticket:24:created",
+            "time": "2022-11-22T22:11:22Z",
+            "type": "zen:event-type:ticket.created",
+            "zendesk_event_version": "2022-11-22T22:11:22Z",
+        }
+    )
 
 
 @pytest.fixture
@@ -339,16 +341,18 @@ def test_handler_invalid_webhook_data_structure(
         "headers": {
             "authorization": AUTH_HEADER,
         },
-        "body": json.dumps({
-            "account_id": "not_an_int",
-            "detail": {},
-            "event": {},
-            "id": "uuid",
-            "subject": "sub",
-            "time": "time",
-            "type": "type",
-            "zendesk_event_version": "zv",
-        }),
+        "body": json.dumps(
+            {
+                "account_id": "not_an_int",
+                "detail": {},
+                "event": {},
+                "id": "uuid",
+                "subject": "sub",
+                "time": "time",
+                "type": "type",
+                "zendesk_event_version": "zv",
+            }
+        ),
     }
     response = handler.handler(event, lambda_context)
     assert response["statusCode"] == 400
@@ -447,7 +451,9 @@ def test_empty_str_to_zero_invalid() -> None:
         (["x", "y", "z"], ["x", "y", "z"]),
     ],
 )
-def test_str_to_list(input_val: str | list[str] | None, expected_val: list[str]) -> None:
+def test_str_to_list(
+    input_val: str | list[str] | None, expected_val: list[str]
+) -> None:
     """Test str_to_list with valid inputs."""
     assert handler._str_to_list(input_val) == expected_val
 

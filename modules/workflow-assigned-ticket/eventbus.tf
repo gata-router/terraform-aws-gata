@@ -1,5 +1,16 @@
 # Copyright 2024 - 2026 Dave Hall, Skwashd Services https://gata.works, MIT License
 
+data "aws_iam_policy_document" "events_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+  }
+}
+
 resource "aws_cloudwatch_event_rule" "assigned_ticket" {
   name           = "gata-assigned-ticket"
   description    = "Zendesk ticket assigned to group"
@@ -33,7 +44,7 @@ resource "aws_cloudwatch_event_target" "assigned_ticket" {
   input_path = "$.detail"
 }
 
-data "aws_iam_policy_document" "eb_new_ticket" {
+data "aws_iam_policy_document" "eb_assigned_ticket" {
   statement {
     effect = "Allow"
 
@@ -53,20 +64,9 @@ resource "aws_iam_policy" "eb_assigned_ticket" {
   policy      = data.aws_iam_policy_document.eb_assigned_ticket.json
 }
 
-data "aws_iam_policy_document" "eb_assigned_ticket_assume" {
-  statement {
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["events.amazonaws.com"]
-    }
-  }
-}
-
 resource "aws_iam_role" "eb_assigned_ticket" {
   name                 = local.eb_role_name
-  assume_role_policy   = data.aws_iam_policy_document.eb_new_ticket_assume.json
+  assume_role_policy   = data.aws_iam_policy_document.events_assume.json
   permissions_boundary = var.role_permissions_boundary
 
   tags = var.tags

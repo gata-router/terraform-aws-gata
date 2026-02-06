@@ -1,0 +1,126 @@
+name: CI Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize]
+  push:
+    branches:
+      - '!main'
+
+jobs:
+  terraform:
+    name: Terraform Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Cache Terraform providers
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.terraform.d/plugin-cache
+          key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6
+
+      - name: Cache TFLint plugins
+        uses: actions/cache@v5
+        with:
+          path: ~/.tflint.d/plugins
+          key: ${{ runner.os }}-tflint-${{ hashFiles('.tflint.hcl') }}
+
+      - name: Setup Trivy
+        uses: aquasecurity/setup-trivy@v0.2.5
+        with:
+          cache: true
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init (Root)
+        run: terraform init -backend=false
+
+      - name: Terraform Validate (Root)
+        run: terraform validate
+
+      - name: Terraform Init and Validate (Modules)
+        run: |
+          for module in modules/*/; do
+            echo "Validating ${module}..."
+            cd "${module}"
+            terraform init -backend=false
+            terraform validate
+            cd - > /dev/null
+          done
+
+      - name: TFLint
+        run: |
+          tflint --init
+          tflint
+          for module in modules/*/; do
+            echo "Linting ${module}..."
+            tflint --chdir="${module}"
+          done
+
+      - name: Trivy Config Scan
+        run: trivy config --severity CRITICAL,HIGH .
+
+  python:
+    name: Python Testing
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - modules/eventbus
+          - modules/mock-ticket-update
+          - modules/prepare-text
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Cache uv
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles(format('{0}/**/uv.lock', matrix.module)) }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.module }}
+        run: uv sync --dev
+
+      - name: Ruff Lint
+        working-directory: ${{ matrix.module }}
+        run: uv run ruff check .
+
+      - name: Ruff Format Check
+        working-directory: ${{ matrix.module }}
+        run: uv run ruff format --check .
+
+      - name: Type Check with ty
+        working-directory: ${{ matrix.module }}
+        run: uv run ty check
+
+      - name: Run Tests with Coverage
+        working-directory: ${{ matrix.module }}
+        run: |
+          uv run coverage run -m pytest handler/
+          uv run coverage report

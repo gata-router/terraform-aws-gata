@@ -34,7 +34,7 @@ resource "aws_vpc_security_group_egress_rule" "egress_https_all" {
   to_port     = 443
   ip_protocol = "tcp"
 
-  #trivy:ignore:avd-aws-0104 We need to allow access to the internet for now
+  # trivy:ignore:AVD-AWS-0104 We need to allow access to the internet for now
   cidr_ipv4 = "0.0.0.0/0"
 }
 

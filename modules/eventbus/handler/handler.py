@@ -24,7 +24,7 @@ try:
     from types_boto3_events.type_defs import PutEventsRequestEntryTypeDef
 except ImportError:
     # Avoid needing to build a layer with the stubs
-    class PutEventsRequestEntryTypeDef(TypedDict):  # type: ignore[no-redef] # Fallback for run time.
+    class PutEventsRequestEntryTypeDef(TypedDict):  # Fallback for run time.
         """Type definition for PutEventsRequestEntry."""
 
         # Time: NotRequired[TimestampTypeDef] # noqa: ERA001 # We don't use this but keeping for reference.
@@ -550,13 +550,15 @@ def prepare_event_data(event_data: ZendeskEvent) -> PutEventsRequestEntryTypeDef
     dict: The prepared event data.
 
     """
-    return PutEventsRequestEntryTypeDef({
-        "Source": "zendesk.com",
-        "Resources": [event_data.subject, event_data.subject.split(":")[1]],
-        "DetailType": event_data.type[15:],
-        "Detail": event_data.model_dump_json(),
-        "EventBusName": os.environ["EVENT_BUS_NAME"],
-    })
+    return PutEventsRequestEntryTypeDef(
+        {
+            "Source": "zendesk.com",
+            "Resources": [event_data.subject, event_data.subject.split(":")[1]],
+            "DetailType": event_data.type[15:],
+            "Detail": event_data.model_dump_json(),
+            "EventBusName": os.environ["EVENT_BUS_NAME"],
+        }
+    )
 
 
 def send_to_eventbridge(event_data: PutEventsRequestEntryTypeDef) -> None:

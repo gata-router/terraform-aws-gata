@@ -8,7 +8,7 @@ __license__ = "MIT"
 import re
 from typing import Any
 
-import contractions  # type: ignore[import-untyped] # Contractions has no type hints
+import contractions
 from aws_lambda_powertools import Logger
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
