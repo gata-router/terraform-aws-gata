@@ -19,8 +19,8 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = [
-  "ruff==0.15.2",
-  "ty==0.0.18",
+  "ruff==0.15.3",
+  "ty==0.0.19",
 ]
 
 [build-system]
