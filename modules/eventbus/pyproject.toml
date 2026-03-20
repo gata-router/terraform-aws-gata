@@ -19,7 +19,7 @@ dev = [
   "aws-lambda-powertools==3.25.0",
   "boto3==1.42.59",
   "coverage==7.13.5",
-  "moto==5.1.21",
+  "moto==5.1.22",
   "pydantic==2.12.5",
   "pytest==9.0.2",
   "pytest-mock==3.15.1",
