@@ -16,7 +16,7 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = [
-  "aws-lambda-powertools==3.28.0",
+  "aws-lambda-powertools==3.31.0",
   "boto3==1.43.32",
   "coverage==7.13.5",
   "moto==5.1.22",
