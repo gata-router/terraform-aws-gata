@@ -576,7 +576,7 @@ def send_to_eventbridge(event_data: PutEventsRequestEntryTypeDef) -> None:
     """
     eventbridge = boto3.client("events")
     try:
-        eventbridge.put_events(Entries=[event_data])
+        eventbridge.put_events(Entries=[event_data])  # ty: ignore[invalid-argument-type] # Ignore the runtime fallback type
     except ClientError as e:
         logger.exception("Error putting event on EventBridge")
         raise ProcessingError("Error processing event", 500) from e  # noqa: TRY003 ProcessingError is a generic exception that needs a message
