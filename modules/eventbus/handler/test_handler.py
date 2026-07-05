@@ -577,7 +577,7 @@ def test_ticket_via_valid_channel() -> None:
         "web_widget",
     ]
     for channel_val in valid_channels:
-        ticket_via = TicketVia(channel=channel_val)  # type: ignore[arg-type] # str is valid here
+        ticket_via = TicketVia(channel=channel_val)  # ty: ignore[invalid-argument-type] # str is valid here
         assert ticket_via.channel == channel_val
         # Ensure no other fields are present by converting to dict
         assert ticket_via.model_dump() == {"channel": channel_val}
@@ -588,13 +588,13 @@ def test_ticket_via_invalid_channel() -> None:
     invalid_channels = ["invalid_channel", "web", 123, None]
     for channel_val in invalid_channels:
         with pytest.raises(ValidationError):
-            TicketVia(channel=channel_val)  # type: ignore[arg-type] # str is valid here
+            TicketVia(channel=channel_val)  # ty: ignore[invalid-argument-type] # str is valid here
 
 
 def test_ticket_via_extra_fields() -> None:
     """Test TicketVia model does not accept extra fields like 'source'."""
     with pytest.raises(ValidationError):
-        TicketVia(channel="email", source={"rel": "test"})  # type: ignore[arg-type, call-arg] # Testing invalid values
+        TicketVia(channel="email", source={"rel": "test"})  # ty: ignore[invalid-argument-type, unknown-argument] # Testing invalid values
 
 
 @pytest.mark.parametrize(
@@ -624,7 +624,7 @@ def test_channel_literal_valid_values(channel_value: str) -> None:
     class ModelWithChannel(handler.BaseModel):
         channel_field: Channel
 
-    model_instance = ModelWithChannel(channel_field=channel_value)  # type: ignore[arg-type] # str is valid here
+    model_instance = ModelWithChannel(channel_field=channel_value)  # ty: ignore[invalid-argument-type] # str is valid here
     assert model_instance.channel_field == channel_value
 
 
@@ -643,4 +643,4 @@ def test_channel_literal_invalid_value(channel_value: str) -> None:
         channel_field: Channel
 
     with pytest.raises(ValidationError):
-        ModelWithChannel(channel_field=channel_value)  # type: ignore[arg-type] # Testing invalid values
+        ModelWithChannel(channel_field=channel_value)  # ty: ignore[invalid-argument-type] # Testing invalid values

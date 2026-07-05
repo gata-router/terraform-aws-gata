@@ -1,5 +1,15 @@
 version: 2
 updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 1
+    labels:
+      - "dependencies"
+      - "actions"
+
   - package-ecosystem: "terraform"
     directories:
       - "/"
@@ -10,12 +20,14 @@ updates:
       time: "03:14"
       timezone: "Australia/Melbourne"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 1
     labels:
       - "dependencies"
       - "terraform"
 
   - package-ecosystem: "uv"
-    directories: 
+    directories:
       - "/scripts/backfill/"
       - "/modules/eventbus/"
       - "/modules/mock-ticket-update/"
@@ -36,6 +48,8 @@ updates:
           - "ruff"
           - "ty"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 1
     labels:
       - "dependencies"
       - "python"
