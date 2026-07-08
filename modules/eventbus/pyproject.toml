@@ -17,7 +17,7 @@ dynamic = ["version"]
 [dependency-groups]
 dev = [
   "aws-lambda-powertools==3.31.0",
-  "boto3==1.43.40",
+  "boto3==1.43.41",
   "coverage==7.13.5",
   "moto==5.1.22",
   "pydantic==2.13.4",
@@ -25,7 +25,7 @@ dev = [
   "pytest==9.1.1",
   "ruff==0.15.20",
   "ty==0.0.56",
-  "types-boto3[events,ssm]==1.43.40",
+  "types-boto3[events,ssm]==1.43.41",
 ]
 
 [build-system]
