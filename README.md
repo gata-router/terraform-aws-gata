@@ -6,6 +6,17 @@ Operational costs vary, with per ticket costs reducing with greater volume. The 
 
 The ideal user of Gata is a team with at least 1000 tickets per month where 80% or more are not classified. The model performs well with both balanced and uneven distribution of ticket categories.
 
+## Architecture
+
+![Gata architecture diagram showing the Zendesk ingestion backbone and the four workflows: new ticket, assigned ticket, close ticket and weekly finetune](architecture.svg)
+
+The diagram source is in [`architecture.mmd`](architecture.mmd) (Mermaid). A Zendesk webhook feeds a Lambda function URL, which publishes onto the raw `zendesk` EventBridge bus; cross-bus rules forward relevant events onto the application `gata` bus that every workflow below subscribes to. All raw Zendesk events are also archived to S3 via Firehose, independently of the four workflows.
+
+* **New ticket** - PII redaction and embedding, Bedrock Nova Micro prioritisation, SageMaker Serverless BERT routing, then the result is written back to Zendesk and recorded in Aurora.
+* **Assigned ticket** - on first-time group assignment, a pgvector similarity search over Aurora finds the 5 most similar past tickets and posts them as a private comment. This is an agent-assist helper only; it does not feed training data.
+* **Close ticket** - one rule fans out to two state machines: one re-runs the ticket-data step and upserts the closed group onto the ticket row (the row the weekly finetune trains on), the other summarises the resolution with Bedrock Nova Lite as a private comment.
+* **Weekly finetune** - an ECS Fargate task preps training data from Aurora, SageMaker spot training jobs produce new model artifacts, and the serverless inference endpoint is updated in place so the new-ticket workflow keeps calling a stable endpoint name. There is no scheduler wired up for this in Terraform today; it is started externally.
+
 ## Quick Start
 
 If you want to skip the 🧇, [jump straight to the quick start](examples/quickstart/README.md) to install and start using Gata.

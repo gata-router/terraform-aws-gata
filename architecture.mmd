@@ -1,0 +1,102 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "IBM Plex Mono, ui-monospace, monospace",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#1d0e55",
+    "primaryBorderColor": "#1d0e55",
+    "lineColor": "#1d0e55",
+    "secondaryColor": "#ffffff",
+    "tertiaryColor": "#ffffff",
+    "clusterBkg": "#ffffff",
+    "clusterBorder": "#c4c0d4",
+    "edgeLabelBackground": "#ffffff",
+    "fontSize": "15px",
+    "titleColor": "#19002e",
+    "tertiaryTextColor": "#19002e",
+    "textColor": "#1d0e55"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true }
+} }%%
+flowchart TB
+    classDef default fill:#ffffff,stroke:#1d0e55,color:#1d0e55,stroke-width:1px;
+    classDef ai fill:#ffffff,stroke:#e84615,color:#e84615,stroke-width:2px;
+    classDef store fill:#e8c3b7,stroke:#1d0e55,color:#1d0e55,stroke-width:1px;
+    classDef subgraphStyle fill:#ffffff,stroke:#c4c0d4,color:#1d0e55;
+
+    Zendesk["Zendesk webhook"]
+    FnUrl["Lambda function URL\n(modules/eventbus)"]
+    ZBus{{"EventBridge bus: zendesk\n(raw)"}}
+    GBus{{"EventBridge bus: gata\n(application)"}}
+
+    Zendesk --> FnUrl --> ZBus
+    ZBus -- "cross-bus rules" --> GBus
+
+    Firehose["Firehose delivery stream"]
+    DataS3Archive[("S3: data bucket\n(raw Zendesk event archive)")]
+    ZBus -. "all Zendesk events, no detail-type filter" .-> Firehose --> DataS3Archive
+
+    Aurora[("Aurora Serverless v2\nPostgreSQL + pgvector\nvia RDS Data API")]
+
+    subgraph NewTicket ["Flow 1: New Ticket (ticket.created)"]
+        direction TB
+        SfnNew["Step Functions:\n&lt;app&gt;-new-ticket"]
+        TicketData["Nested SFN: ticket-data\nComprehend PII check + redact\nTitan Embed embedding"]
+        Nova["Bedrock Nova Micro\n(prioritisation)"]:::ai
+        SageInfer["SageMaker Serverless endpoint\nBERT routing inference\n(general / low-volume)\nstable name, e.g. gata-general"]:::ai
+        WriteZendesk["Lambda: write group/priority\nback to Zendesk"]
+        InsertTicket["RDS Data API:\nINSERT INTO ticket"]
+
+        SfnNew --> TicketData --> Nova --> SageInfer --> WriteZendesk --> InsertTicket
+    end
+    GBus --> SfnNew
+    InsertTicket --> Aurora
+
+    subgraph AssignedTicket ["Flow 2: Assigned Ticket (first group assignment - agent assist only)"]
+        direction TB
+        SfnAssigned["Step Functions:\n&lt;app&gt;-assigned-ticket"]
+        VecSearch["Vector similarity search\nover Aurora pgvector\n(top 5 similar past tickets)"]
+        PostComment["Lambda: post private\nZendesk comment"]
+
+        SfnAssigned --> VecSearch --> PostComment
+    end
+    GBus --> SfnAssigned
+    Aurora --> VecSearch
+
+    subgraph CloseTicket ["Flow 3: Close Ticket (ticket.status_changed = SOLVED)"]
+        direction TB
+        SfnRecord["Step Functions:\nsolved-ticket-record"]
+        TicketData2["Re-run ticket-data sub-workflow"]
+        Upsert["RDS Data API UPSERT:\nsets closed_group_id"]
+        SfnSummary["Step Functions:\nsolved-ticket-summary"]
+        FetchComments["Fetch ticket comments"]
+        NovaLite["Bedrock Nova Lite\n(summarisation)"]:::ai
+        PostSummary["Lambda: post private\nsummary comment"]
+
+        SfnRecord --> TicketData2 --> Upsert
+        SfnSummary --> FetchComments --> NovaLite --> PostSummary
+    end
+    GBus -- "one rule, fans out" --> SfnRecord
+    GBus -- "one rule, fans out" --> SfnSummary
+    Upsert --> Aurora
+
+    subgraph Finetune ["Flow 4: Weekly Finetune (started externally, no scheduler in repo)"]
+        direction TB
+        SfnFinetune["Step Functions:\nfinetune SFN"]
+        DataPrep["ECS Fargate task:\ndata-prep\n(reads Aurora, splits\ngeneral / low-volume,\ntrain / test)"]
+        DataS3Train[("S3: data bucket\n(finetune train/test JSON)")]
+        TrainGeneral["SageMaker spot training\nml.g6.xlarge (general)"]:::ai
+        TrainLowVol["SageMaker spot training\nml.g6.xlarge (low-volume,\nconditional)"]:::ai
+        ModelS3[("S3: model bucket\n(training artifacts)")]
+        CreateModel["SageMaker CreateModel +\nServerless endpoint config"]
+        UpdateEndpoint["UpdateEndpoint in place\non the Flow 1 endpoint\n(model version rotates,\nname stays constant)"]
+
+        SfnFinetune --> DataPrep --> DataS3Train
+        DataS3Train --> TrainGeneral --> ModelS3
+        DataS3Train --> TrainLowVol --> ModelS3
+        ModelS3 --> CreateModel --> UpdateEndpoint
+    end
+    Aurora --> DataPrep
+
+    class DataS3Archive,DataS3Train,ModelS3,Aurora store;
+    class NewTicket,AssignedTicket,CloseTicket,Finetune subgraphStyle;
